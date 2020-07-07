@@ -10,6 +10,7 @@ public class CallerItem {
     private int size, length;
     private double rate;
     private int p99;
+    private boolean calculated;
 
     CallerItem(){
         callerTimes = 0;
@@ -19,6 +20,7 @@ public class CallerItem {
         min = Integer.MAX_VALUE;
         max = Integer.MIN_VALUE;
         values = new int[size];
+        calculated = false;
     }
 
     private void add(int cost){
@@ -36,6 +38,19 @@ public class CallerItem {
         if (result)
             successTimes += 1;
         add(cost);
+    }
+
+    void add(CallerItem callerItem){
+        max = Math.max(callerItem.max, max);
+        min = Math.min(callerItem.min, min);
+        if(length + callerItem.length >= size){
+            size = length + callerItem.length + (size >> 1);
+            values = Arrays.copyOf(values, size);
+        }
+        System.arraycopy(callerItem.values, 0, values, length, callerItem.length);
+        length += callerItem.length;
+        successTimes += callerItem.successTimes;
+        callerTimes += callerItem.callerTimes;
     }
 
     private void calculateRate(){
@@ -60,15 +75,18 @@ public class CallerItem {
     }
 
     void calculate(){
-        calculateRate();
-        calculateP99();
+        if(!calculated) {
+            calculateRate();
+            calculateP99();
+            calculated = true;
+        }
     }
 
-    public double getRate() {
+    double getRate() {
         return rate;
     }
 
-    public int getP99() {
+    int getP99() {
         return p99;
     }
 }

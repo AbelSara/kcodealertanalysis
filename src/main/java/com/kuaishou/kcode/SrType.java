@@ -43,7 +43,7 @@ public class SrType implements RuleType {
         //判断时间是否再阈值内
         if(minuteTime >= ruleItem.getStartMinuteTime() + timeThresh - 1) {
             ruleItem.setSuccess(true);
-            String[] ips = ipAggregation.split("\\|");
+            String[] ips = ipAggregation.split(",");
             String ans = id + "," + date + "," + caller + "," + ips[0] + "," +
                     responder + "," + ips[1] + "," + nt.format(callerItem.getRate());
             resSet.add(ans);

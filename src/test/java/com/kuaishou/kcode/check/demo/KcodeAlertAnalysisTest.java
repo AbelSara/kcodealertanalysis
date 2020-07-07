@@ -43,7 +43,7 @@ public class KcodeAlertAnalysisTest {
         String q2ResultFilePath2 = "D:\\JavaWorkspace\\kcodeData\\data2\\Q2Result-2.txt";
 
         testQuestion12(sourceFilePath1, ruleFilePath1, q1ResultFilePath1, q2ResultFilePath1);
-//        testQuestion12(sourceFilePath2, ruleFilePath2, q1ResultFilePath2, q2ResultFilePath2);
+        testQuestion12(sourceFilePath2, ruleFilePath2, q1ResultFilePath2, q2ResultFilePath2);
 
     }
 
@@ -55,6 +55,7 @@ public class KcodeAlertAnalysisTest {
         long start = System.nanoTime();
         Collection<String> alertResult = instance.alarmMonitor(sourceFilePath, alertRules);
         long finish = System.nanoTime();
+        System.out.println(finish - start);
         if (Objects.isNull(alertResult) || alertResult.size() != q1CheckResult.size()) {
             System.out.println("Q1 Error Size:" + q1CheckResult.size() + "," + alertResult.size());
             return;
@@ -65,37 +66,28 @@ public class KcodeAlertAnalysisTest {
             System.out.println("Q1 Error Value");
             return;
         }
-//        int len = 0;
-//
-//        for (Q1Result result : q1CheckResult) {
-//            if (!resultSet.contains(result)) {
-//                System.out.println(result);
-//                len++;
-//            }
-//        }
-//        System.out.println(len);
 
         // Q2
-//        Map<Q2Input, Set<Q2Result>> q2Result = createQ2Result(q2ResultFilePath);
-//        long cast = 0L;
-//        for (Map.Entry<Q2Input, Set<Q2Result>> entry : q2Result.entrySet()) {
-//            start = System.nanoTime();
-//            Q2Input q2Input = entry.getKey();
-//            Collection<String> longestPaths = instance.getLongestPath(q2Input.getCaller(), q2Input.getResponder(), q2Input.getTime(), q2Input.getType());
-//            finish = System.nanoTime();
-//            Set<Q2Result> checkResult = entry.getValue();
-//
-//            if (Objects.isNull(longestPaths) || longestPaths.size() != checkResult.size()) {
-//                System.out.println("Q2 Error Size:" + q2Input + "," + checkResult.size() + longestPaths.size());
-//                return;
-//            }
-//            Set<Q2Result> results = longestPaths.stream().map(line -> new Q2Result(line)).collect(Collectors.toSet());
-//            if (!results.containsAll(checkResult)) {
-//                System.out.println("Q2 Error Result:" + q2Input);
-//                return;
-//            }
-//            cast += (finish - start);
-//        }
-//        System.out.println("Q2:" + (finish - start));
+        Map<Q2Input, Set<Q2Result>> q2Result = createQ2Result(q2ResultFilePath);
+        long cast = 0L;
+        for (Map.Entry<Q2Input, Set<Q2Result>> entry : q2Result.entrySet()) {
+            start = System.nanoTime();
+            Q2Input q2Input = entry.getKey();
+            Collection<String> longestPaths = instance.getLongestPath(q2Input.getCaller(), q2Input.getResponder(), q2Input.getTime(), q2Input.getType());
+            finish = System.nanoTime();
+            Set<Q2Result> checkResult = entry.getValue();
+
+            if (Objects.isNull(longestPaths) || longestPaths.size() != checkResult.size()) {
+                System.out.println("Q2 Error Size:" + q2Input + "," + checkResult.size() + longestPaths.size());
+                return;
+            }
+            Set<Q2Result> results = longestPaths.stream().map(line -> new Q2Result(line)).collect(Collectors.toSet());
+            if (!results.containsAll(checkResult)) {
+                System.out.println("Q2 Error Result:" + q2Input);
+                return;
+            }
+            cast += (finish - start);
+        }
+        System.out.println("Q2:" + (finish - start));
     }
 }

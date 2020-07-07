@@ -23,10 +23,6 @@ public class SortType implements RuleType {
     @Override
     public boolean compare(CallerItem callerItem, String ipAggregation, int minuteTime, String date,
                            Set<String> resSet, String caller, String responder) {
-//        if (id == 1 && date.equals("2020-07-02 19:25") && caller.equals("rd_6089216845914989634")
-//                && responder.equals("rd_9563486881659901967") && ipAggregation.equals("10.168.13.100|10.190.81.50")) {
-//            System.out.println(id + " " + callerItem.getP99());
-//        }
         if (compare == '<' && callerItem.getP99() >= thresh) {
             return false;
         } else if (compare == '>' && callerItem.getP99() <= thresh) {
@@ -36,17 +32,14 @@ public class SortType implements RuleType {
         RuleItem ruleItem = ruleItemMap.computeIfAbsent(ipAggregation,
                 k -> new SrItem(minuteTime, date, callerItem.getP99()));
         if (ruleItem.getMinuteTime() != minuteTime && ruleItem.getMinuteTime() + 1 != minuteTime) {
-            return false;
+            ruleItem = new SrItem(minuteTime, date, callerItem.getP99());
+            ruleItemMap.put(ipAggregation, ruleItem);
         }
         if (minuteTime >= ruleItem.getStartMinuteTime() + timeThresh - 1) {
             ruleItem.setSuccess(true);
-            String[] ips = ipAggregation.split("\\|");
+            String[] ips = ipAggregation.split(",");
             String ans = id + "," + date + "," + caller + "," + ips[0] + "," +
                     responder + "," + ips[1] + "," + callerItem.getP99() + "ms";
-//            if (id == 1 && date.equals("2020-07-02 19:25") && caller.equals("rd_6089216845914989634")
-//                    && responder.equals("rd_9563486881659901967") && ipAggregation.equals("10.168.13.100|10.190.81.50")) {
-//                System.out.println(ans);
-//            }
             resSet.add(ans);
         } else {
             ruleItem = new SrItem(minuteTime, date, callerItem.getP99());

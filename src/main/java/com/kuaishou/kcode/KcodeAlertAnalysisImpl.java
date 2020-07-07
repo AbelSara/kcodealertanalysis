@@ -1,144 +1,145 @@
 package com.kuaishou.kcode;
 
 import java.io.*;
+import java.text.NumberFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
 /**
  * @author KCODE
- * Created on 2020-07-04
+ *         Created on 2020-07-04
  */
 public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
+    private static NumberFormat nt = NumberFormat.getPercentInstance();
     private static String ALL = "ALL";
 
-    private SimpleDateFormat sdf;
-    Map<String, List<RuleDict>> ruleMap;
+    static {
+        nt.setMinimumFractionDigits(2);
+    }
 
-    public KcodeAlertAnalysisImpl(){
+    private SimpleDateFormat sdf;
+    //规则集合
+    private List<RuleDict> ruleList;
+    //解析后的数据 caller -> responder -> minute -> ipAggregation -> data
+    private Map<Integer, Map<Integer, Map<Integer, Map<Long, CallerItem>>>> map;
+    //时间记录
+    private Map<Integer, String> minute2date;
+    private Map<String, Integer> date2minute;
+    //hash->name
+    private Map<Integer, String> hash2Service;
+
+    //搜索结构
+    private Map<Integer, Set<Integer>> neighbor;
+    private Map<Integer, Set<Integer>> reverseNeighbor;
+    private Map<String, AggregationItem> longestPathMap;
+
+    public KcodeAlertAnalysisImpl() {
         String format = "yyyy-MM-dd HH:mm";
         sdf = new SimpleDateFormat(format);
-        ruleMap = new HashMap<>();
+        ruleList = new ArrayList<>();
+        minute2date = new TreeMap<>();
+        date2minute = new HashMap<>();
+        hash2Service = new HashMap<>();
+        map = new HashMap<>();
+        neighbor = new HashMap<>();
+        reverseNeighbor = new HashMap<>();
+        longestPathMap = new HashMap<>();
     }
 
-    void calculateCollection(MinuteData collection, Set<String> resSet){
-        int minuteTime = collection.getMinuteTime();
-        String date = collection.getDate();
-        Map<String, CallerItem> callerMap = collection.getCallerMap();
-        for(Map.Entry<String, CallerItem> entry : callerMap.entrySet()){
-            String []str = entry.getKey().split(",");
-            String caller = str[0];
-            String responder = str[1];
-            String ipAggregation = str[2];
-            CallerItem callerItem = entry.getValue();
-            callerItem.calculate();
-            //匹配规则
-            List<RuleDict> ruleDictList;
-            String key = caller + ',' + responder;
-            if((ruleDictList = ruleMap.get(key)) != null){
-                for(RuleDict ruleDict : ruleDictList){
-                    ruleDict.compare(callerItem, ipAggregation, minuteTime, date, resSet, caller, responder);
-                }
-            }
-            key = ALL + "," + responder;
-            if((ruleDictList = ruleMap.get(key)) != null){
-                for(RuleDict ruleDict : ruleDictList){
-                    ruleDict.compare(callerItem, ipAggregation,
-                            minuteTime, date, resSet, caller, responder);
-                }
-            }
-            key = caller + "," + ALL;
-            if((ruleDictList = ruleMap.get(key)) != null){
-                for(RuleDict ruleDict : ruleDictList){
-                    ruleDict.compare(callerItem, ipAggregation,
-                            minuteTime, date, resSet, caller, responder);
+    private void calculateCollection(Set<String> resSet) {
+        for (Map.Entry<Integer, String> timeEntry : minute2date.entrySet()) {
+            int minuteTime = timeEntry.getKey();
+            String date = minute2date.get(minuteTime);
+            for (RuleDict rule : ruleList) {
+                int callerHash = rule.getCaller();
+                int responderHash = rule.getResponder();
+                int ALL_HASH = -1;
+                if (callerHash == ALL_HASH) {
+                    for (Map.Entry<Integer, Map<Integer, Map<Integer, Map<Long, CallerItem>>>> callerEntry : map.entrySet()) {
+                        Map<Integer, Map<Integer, Map<Long, CallerItem>>> responderMap = callerEntry.getValue();
+                        Map<Integer, Map<Long, CallerItem>> minuteMap;
+                        Map<Long, CallerItem> ipAggregationMap;
+                        String caller = hash2Service.get(callerEntry.getKey());
+                        String responder = hash2Service.get(responderHash);
+                        if ((minuteMap = responderMap.get(responderHash)) != null
+                                && (ipAggregationMap = minuteMap.get(minuteTime)) != null) {
+                            for (Map.Entry<Long, CallerItem> ipAggregationEntry : ipAggregationMap.entrySet()) {
+                                String ipAggregation = decodeIp(ipAggregationEntry.getKey());
+                                CallerItem callerItem = ipAggregationEntry.getValue();
+                                callerItem.calculate();
+                                rule.compare(callerItem, ipAggregation,
+                                        minuteTime, date, resSet, caller, responder);
+                            }
+                        }
+                    }
+                } else if (responderHash == ALL_HASH) {
+                    Map<Integer, Map<Integer, Map<Long, CallerItem>>> responderMap = map.get(callerHash);
+                    if (responderMap != null) {
+                        String caller = hash2Service.get(callerHash);
+                        for (Map.Entry<Integer, Map<Integer, Map<Long, CallerItem>>> responderEntry
+                                : responderMap.entrySet()) {
+                            String responder = hash2Service.get(responderEntry.getKey());
+                            Map<Integer, Map<Long, CallerItem>> minuteMap = responderEntry.getValue();
+                            Map<Long, CallerItem> ipAggregationMap = minuteMap.get(minuteTime);
+                            if (ipAggregationMap != null) {
+                                for (Map.Entry<Long, CallerItem> ipAggregationEntry : ipAggregationMap.entrySet()) {
+                                    String ipAggregation = decodeIp(ipAggregationEntry.getKey());
+                                    CallerItem callerItem = ipAggregationEntry.getValue();
+                                    callerItem.calculate();
+                                    rule.compare(callerItem, ipAggregation,
+                                            minuteTime, date, resSet, caller, responder);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Map<Integer, Map<Integer, Map<Long, CallerItem>>> responderMap = map.get(callerHash);
+                    if (responderMap != null) {
+                        String caller = hash2Service.get(callerHash);
+                        Map<Integer, Map<Long, CallerItem>> minuteMap = responderMap.get(responderHash);
+                        if (minuteMap != null) {
+                            String responder = hash2Service.get(responderHash);
+                            Map<Long, CallerItem> ipAggregationMap = minuteMap.get(minuteTime);
+                            if (ipAggregationMap != null) {
+                                for (Map.Entry<Long, CallerItem> ipAggregationEntry : ipAggregationMap.entrySet()) {
+                                    String ipAggregation = decodeIp(ipAggregationEntry.getKey());
+                                    CallerItem callerItem = ipAggregationEntry.getValue();
+                                    callerItem.calculate();
+                                    rule.compare(callerItem, ipAggregation,
+                                            minuteTime, date, resSet, caller, responder);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-/*
-    @Override
-    public Collection<String> alarmMonitor(String path, Collection<String> alertRules)
-            throws IOException, ParseException {
-        //解析规则
-        for(String rule : alertRules){
-            String[] parts = rule.split(",");
-            int id = Integer.parseInt(parts[0]);
-            String caller = parts[1];
-            String responder = parts[2];
-            String type = parts[3];
-            String detail = parts[4];
-            int timeThresh = 0;
-            for(int i = 0; detail.charAt(i) != '<' && detail.charAt(i) != '>'; ++i){
-                timeThresh = timeThresh * 10 + detail.charAt(i) - '0';
-            }
-            char compare = detail.charAt(detail.length() - 1);
-            String thresh = parts[5];
-            List<RuleDict> list = ruleMap.computeIfAbsent(caller + "," + responder, k -> new ArrayList<>());
-            list.add(new RuleDict(id,compare,type,timeThresh,thresh));
-        }
 
-        //解析数据
-        Set<String> resSet = new HashSet<>();
-        BufferedReader reader = new BufferedReader(new FileReader(path));
-        String str;
-        MinuteData smallCollection = new MinuteData();
-        MinuteData largeCollection = new MinuteData();
-        str = reader.readLine();
-        String[] s = str.split(",");
-        String caller = s[0];
-        String callerIp = s[1];
-        String responder = s[2];
-        String responderIp = s[3];
-        boolean result = Boolean.parseBoolean(s[4]);
-        int cost = Integer.parseInt(s[5]);
-        long timestamp = Long.parseLong(s[6]);
-        int minuteTime = (int)(timestamp / 60000);
-        smallCollection.setMinuteTime(minuteTime);
-        smallCollection.add(caller + "," + responder + ',' +
-                callerIp + "|" + responderIp, cost, result);
-        smallCollection.setDate(sdf.format(new Date(timestamp)));
-        while((str = reader.readLine()) != null){
-            s = str.split(",");
-            caller = s[0];
-            callerIp = s[1];
-            responder = s[2];
-            responderIp = s[3];
-            result = Boolean.parseBoolean(s[4]);
-            cost = Integer.parseInt(s[5]);
-            timestamp = Long.parseLong(s[6]);
-            minuteTime = (int)(timestamp / 60000);
-            if(minuteTime > smallCollection.getMinuteTime()
-                    && minuteTime > largeCollection.getMinuteTime()){
-                System.out.print(smallCollection.getMinuteTime() + " start -> ");
-                calculateCollection(smallCollection, resSet);
-                System.out.println("end!");
-                smallCollection = largeCollection;
-                largeCollection = new MinuteData(minuteTime);
-                largeCollection.setDate(sdf.format(new Date(timestamp)));
-            }
-            if(smallCollection.getMinuteTime() == minuteTime){
-                smallCollection.add(caller + "," + responder + ',' +
-                        callerIp + "|" + responderIp, cost, result);
-            }else{
-                if(largeCollection.getMinuteTime() == Integer.MAX_VALUE){
-                    largeCollection.setMinuteTime(minuteTime);
-                    largeCollection.setDate(sdf.format(new Date(timestamp)));
+    private void initConstruct() {
+        for (Map.Entry<Integer, Map<Integer, Map<Integer, Map<Long, CallerItem>>>> callerEntry : map.entrySet()) {
+            String caller = hash2Service.get(callerEntry.getKey());
+            for (Map.Entry<Integer, Map<Integer, Map<Long, CallerItem>>> responderEntry : callerEntry.getValue().entrySet()) {
+                String responder = hash2Service.get(responderEntry.getKey());
+                for (Map.Entry<Integer, Map<Long, CallerItem>> minuteEntry : responderEntry.getValue().entrySet()) {
+                    CallerItem tmpItem = new CallerItem();
+                    for (Map.Entry<Long, CallerItem> ipAggregationEntry : minuteEntry.getValue().entrySet()) {
+                        CallerItem callerItem = ipAggregationEntry.getValue();
+                        tmpItem.add(callerItem);
+                    }
+                    tmpItem.calculate();
+                    longestPathMap.put(caller + responder + minute2date.get(minuteEntry.getKey()),
+                            new AggregationItem(nt.format(tmpItem.getRate()), tmpItem.getP99()));
                 }
-                largeCollection.add(caller + ","+responder + ',' +
-                        callerIp + "|" + responderIp,
-                        cost, result);
+                //构建图
+                Set<Integer> tmpSet = neighbor.computeIfAbsent(callerEntry.getKey(), k -> new HashSet<>());
+                tmpSet.add(responderEntry.getKey());
+                tmpSet = reverseNeighbor.computeIfAbsent(responderEntry.getKey(), k -> new HashSet<>());
+                tmpSet.add(callerEntry.getKey());
             }
         }
-        System.out.print(smallCollection.getMinuteTime() + " start -> ");
-        calculateCollection(smallCollection, resSet);
-        System.out.println("end!");
-        System.out.print(largeCollection.getMinuteTime() + " start -> ");
-        calculateCollection(largeCollection, resSet);
-        System.out.println("end!");
-        return resSet;
     }
-*/
 
     private String decodeIp(long ipAggregation) {
         return (ipAggregation >>> 56) + "." + ((ipAggregation & 0xFFFFFFFFFFFFFFL) >>> 48) + "."
@@ -150,7 +151,7 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
     @Override
     public Collection<String> alarmMonitor(String path, Collection<String> alertRules) throws IOException, ParseException {
         //解析规则
-        for(String rule : alertRules){
+        for (String rule : alertRules) {
             String[] parts = rule.split(",");
             int id = Integer.parseInt(parts[0]);
             String caller = parts[1];
@@ -158,36 +159,38 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
             String type = parts[3];
             String detail = parts[4];
             int timeThresh = 0;
-            for(int i = 0; detail.charAt(i) != '<' && detail.charAt(i) != '>'; ++i){
+            for (int i = 0; detail.charAt(i) != '<' && detail.charAt(i) != '>'; ++i) {
                 timeThresh = timeThresh * 10 + detail.charAt(i) - '0';
             }
             char compare = detail.charAt(detail.length() - 1);
             String thresh = parts[5];
-            List<RuleDict> list = ruleMap.computeIfAbsent(caller + "," + responder, k -> new ArrayList<>());
-            list.add(new RuleDict(id,compare,type,timeThresh,thresh));
+            ruleList.add(new RuleDict(caller, responder, id, compare, type, timeThresh, thresh));
         }
+        Set<String> resSet = new HashSet<>();
         //读取数据
         InputStream inputStream = new FileInputStream(path);
-        Map<Long, Map<Long, Map<Integer, CallerItem>>> map = new TreeMap<>();
+
         int cache = 1024 * 256;
         byte[] byteArr = new byte[cache];
         byte[] preByte = new byte[128];
         byte[] s = new byte[cache + 128];
         int preLen = 0, len, pos;
-//        int smallMinute = Integer.MAX_VALUE, largeMinute = Integer.MAX_VALUE;
-        while((len = inputStream.read(byteArr)) != -1){
+        while ((len = inputStream.read(byteArr)) != -1) {
             System.arraycopy(preByte, 0, s, 0, preLen);
             for (pos = len - 1; byteArr[pos] != 0x0A; --pos) ;
             System.arraycopy(byteArr, 0, s, preLen, ++pos);
             int end = pos + preLen;
             preLen = len - pos;
             System.arraycopy(byteArr, pos, preByte, 0, preLen);
-            for(int i = 0; i < end;){
+            for (int i = 0; i < end; ) {
                 int j = i;
                 int caller = 0;
                 //caller
-                for(; s[j] != ','; ++j)
+                for (; s[j] != ','; ++j)
                     caller = caller * 31 + s[j];
+                if (!hash2Service.containsKey(caller)) {
+                    hash2Service.put(caller, new String(s, i, j - i));
+                }
                 //caller ip
                 long callerIp = 0;
                 for (j += 1; s[j] != ','; ++j) {
@@ -195,13 +198,16 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                     for (; s[j] != '.' && s[j] != ','; ++j)
                         frame = frame * 10 + s[j] - '0';
                     callerIp = frame | (callerIp << 8L);
-                    if(s[j] == ',')
+                    if (s[j] == ',')
                         break;
                 }
                 //responder
                 int responder = 0;
-                for(j += 1; s[j] != ','; ++j)
+                for (j += 1, i = j; s[j] != ','; ++j)
                     responder = responder * 31 + s[j];
+                if (!hash2Service.containsKey(responder)) {
+                    hash2Service.put(responder, new String(s, i, j - i));
+                }
                 //responder ip
                 long responderIp = 0;
                 for (j += 1; s[j] != ','; ++j) {
@@ -209,52 +215,138 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                     for (; s[j] != '.' && s[j] != ','; ++j)
                         frame = frame * 10 + s[j] - '0';
                     responderIp = frame | (responderIp << 8L);
-                    if(s[j] == ',')
+                    if (s[j] == ',')
                         break;
                 }
                 //result
                 ++j;
                 boolean result = s[j] == 't';
-
                 j += result ? 4 : 5;
-
+                //cost
                 int cost = 0;
                 for (j += 1; s[j] != ','; ++j)
                     cost = cost * 10 + s[j] - '0';
-
+                //timestamp
                 long timestamp = 0;
                 for (j += 1; s[j] != 0x0A; ++j)
                     timestamp = timestamp * 10 + s[j] - '0';
                 int minuteStamp = (int) (timestamp / 60000);
                 i = j + 1;
-                long serviceAggregation = 0L;
-                serviceAggregation = (serviceAggregation << 32) | caller;
-                serviceAggregation = (serviceAggregation << 32) | responder;
                 long ipAggregation = 0L;
                 ipAggregation = (ipAggregation << 32) | callerIp;
                 ipAggregation = (ipAggregation << 32) | responderIp;
-                Map<Long, Map<Integer, CallerItem>> serviceMap =
-                        map.computeIfAbsent(serviceAggregation, k -> new HashMap<>());
-                Map<Integer, CallerItem> ipAggregationMap =
-                        serviceMap.computeIfAbsent(ipAggregation, k -> new HashMap<>());
-                CallerItem callerItem = ipAggregationMap.computeIfAbsent(minuteStamp, k -> new CallerItem());
+                //放入中间数据
+                Map<Integer, Map<Integer, Map<Long, CallerItem>>> responderMap =
+                        map.computeIfAbsent(caller, k -> new HashMap<>());
+                Map<Integer, Map<Long, CallerItem>> minuteMap =
+                        responderMap.computeIfAbsent(responder, k -> new HashMap<>());
+                Map<Long, CallerItem> ipAggregationMap =
+                        minuteMap.computeIfAbsent(minuteStamp, k -> new HashMap<>());
+                CallerItem callerItem = ipAggregationMap.computeIfAbsent(ipAggregation, k -> new CallerItem());
                 callerItem.add(cost, result);
-//                if(minuteStamp > smallMinute && minuteStamp > largeMinute){
-//                    smallMinute = largeMinute;
-//                    largeMinute = minuteStamp;
-//                }
-//                if(smallMinute == Integer.MAX_VALUE){
-//                    smallMinute = minuteStamp;
-//                }else if(largeMinute == Integer.MAX_VALUE){
-//                    largeMinute = minuteStamp;
-//                }
+                //放入时间转换
+                if (!minute2date.containsKey(minuteStamp)) {
+                    String date = sdf.format(new Date(timestamp));
+                    minute2date.put(minuteStamp, date);
+                    date2minute.put(date, minuteStamp);
+                }
             }
         }
-        return null;
+        calculateCollection(resSet);
+        initConstruct();
+        return resSet;
+    }
+
+    private int findLongest(Map<Integer, Set<Integer>> neighborMap, int curIdx, int step) {
+        step += 1;
+        Set<Integer> neighbors = neighborMap.get(curIdx);
+        if (neighbors == null) return step;
+        int res = 0;
+        for (int neighborIdx : neighbors) {
+            res = Math.max(res, findLongest(neighborMap, neighborIdx, step));
+        }
+        return res;
+    }
+
+    private void collectLongest(Map<Integer, Set<Integer>> neighborMap, int curIdx, LinkedList<Integer> list,
+                                List<List<Integer>> resList, int step, int target, boolean forward) {
+        step += 1;
+        if (forward) {
+            list.addLast(curIdx);
+        } else {
+            list.addFirst(curIdx);
+        }
+        if (step == target) {
+            resList.add(new ArrayList<>(list));
+        }
+        Set<Integer> neighbors = neighborMap.get(curIdx);
+        if (neighbors != null) {
+            for (int neighborIdx : neighbors) {
+                collectLongest(neighborMap, neighborIdx, list, resList, step, target, forward);
+            }
+        }
+        if (forward) {
+            list.removeLast();
+        } else {
+            list.removeFirst();
+        }
     }
 
     @Override
     public Collection<String> getLongestPath(String caller, String responder, String time, String type) {
-        return null;
+        boolean sr = false;
+        if (type.equals("SR"))
+            sr = true;
+        int longest = findLongest(neighbor, responder.hashCode(), 0);
+        List<List<Integer>> forwardList = new ArrayList<>();
+        collectLongest(neighbor, responder.hashCode(), new LinkedList<>(), forwardList, 0, longest, true);
+        longest = findLongest(reverseNeighbor, caller.hashCode(), 0);
+        List<List<Integer>> reverseList = new ArrayList<>();
+        collectLongest(reverseNeighbor, caller.hashCode(), new LinkedList<>(), reverseList, 0, longest, false);
+        Set<String> resSet = new HashSet<>();
+        for (List<Integer> reversePath : reverseList) {
+            StringBuilder reversePathBuilder = new StringBuilder();
+            StringBuilder reverseResultBuilder = new StringBuilder();
+            int preIdx = -1;
+            for (int idx : reversePath) {
+                reversePathBuilder.append(hash2Service.get(idx)).append("->");
+                if (preIdx != -1) {
+                    AggregationItem aggregationItem =
+                            longestPathMap.get(hash2Service.get(preIdx) + hash2Service.get(idx) + time);
+                    if (aggregationItem != null) {
+                        reverseResultBuilder.append(sr ?
+                                aggregationItem.getRate() : (aggregationItem.getP99() + "ms")).append(',');
+                    }else{
+                        reverseResultBuilder.append(sr ? "-1%" : "-1ms").append(',');
+                    }
+                }
+                preIdx = idx;
+            }
+            int tmp = preIdx;
+            StringBuilder pathBuilder = new StringBuilder(reversePathBuilder);
+            StringBuilder resultBuilder = new StringBuilder(reverseResultBuilder);
+            for (List<Integer> path : forwardList) {
+                preIdx = tmp;
+                for (int idx : path) {
+                    pathBuilder.append(hash2Service.get(idx)).append("->");
+                    if (preIdx != -1) {
+                        AggregationItem aggregationItem =
+                                longestPathMap.get(hash2Service.get(preIdx) + hash2Service.get(idx) + time);
+                        if (aggregationItem != null) {
+                            resultBuilder.append(sr ?
+                                    aggregationItem.getRate() : (aggregationItem.getP99() + "ms")).append(',');
+                        } else {
+                            resultBuilder.append(sr ? "-1%" : "-1ms").append(',');
+                        }
+                    }
+                    preIdx = idx;
+                }
+            }
+            pathBuilder.delete(pathBuilder.length() - 2, pathBuilder.length());
+            resultBuilder.deleteCharAt(resultBuilder.length() - 1);
+            pathBuilder.append('|').append(resultBuilder);
+            resSet.add(pathBuilder.toString());
+        }
+        return resSet;
     }
 }
