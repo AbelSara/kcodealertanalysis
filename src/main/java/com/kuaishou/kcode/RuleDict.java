@@ -27,8 +27,8 @@ class RuleDict {
     }
 
     void compare(CallerItem callerItem, String ipAggregation, int minuteTime, String date,
-                 Set<String> resSet, String caller, String responder){
-        ruleType.compare(callerItem, ipAggregation, minuteTime, date, resSet, caller, responder);
+                 Set<String> resSet, String caller, String responder, Set<WarningItem> warningPoint){
+        ruleType.compare(callerItem, ipAggregation, minuteTime, date, resSet, caller, responder, warningPoint);
     }
 
     String getCaller() {

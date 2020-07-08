@@ -22,10 +22,8 @@ public class SortType implements RuleType {
 
     @Override
     public boolean compare(CallerItem callerItem, String ipAggregation, int minuteTime, String date,
-                           Set<String> resSet, String caller, String responder) {
-        if (compare == '<' && callerItem.getP99() >= thresh) {
-            return false;
-        } else if (compare == '>' && callerItem.getP99() <= thresh) {
+                           Set<String> resSet, String caller, String responder, Set<WarningItem> warningPoint) {
+        if (compare == '<' && callerItem.getP99() >= thresh || compare == '>' && callerItem.getP99() <= thresh) {
             return false;
         }
 
@@ -40,9 +38,7 @@ public class SortType implements RuleType {
             String ans = id + "," + date + "," + caller + "," + ips[0] + "," +
                     responder + "," + ips[1] + "," + callerItem.getP99() + "ms";
             resSet.add(ans);
-        } else if(minuteTime > ruleItem.getStartMinuteTime() + timeThresh - 1){
-            ruleItem = new RuleItem(minuteTime);
-            ruleItemMap.put(ipAggregation, ruleItem);
+            warningPoint.add(new WarningItem(caller,responder,date,"P99"));
         }
         ruleItem.setMinuteTime(minuteTime);
 

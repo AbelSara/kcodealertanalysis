@@ -48,9 +48,9 @@ public class CallerItem {
             values = Arrays.copyOf(values, size);
         }
         System.arraycopy(callerItem.values, 0, values, length, callerItem.length);
-        length += callerItem.length;
         successTimes += callerItem.successTimes;
         callerTimes += callerItem.callerTimes;
+        length += callerItem.length;
     }
 
     private void calculateRate(){

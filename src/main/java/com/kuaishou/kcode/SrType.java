@@ -27,10 +27,8 @@ public class SrType implements RuleType {
 
     @Override
     public boolean compare(CallerItem callerItem, String ipAggregation, int minuteTime, String date,
-                           Set<String> resSet, String caller, String responder) {
-        if (compare == '<' && callerItem.getRate() >= thresh) {
-            return false;
-        } else if (compare == '>' && callerItem.getRate() <= thresh) {
+                           Set<String> resSet, String caller, String responder, Set<WarningItem> warningPoint) {
+        if (compare == '<' && callerItem.getRate() >= thresh || compare == '>' && callerItem.getRate() <= thresh) {
             return false;
         }
         RuleItem ruleItem = ruleItemMap.computeIfAbsent(ipAggregation,
@@ -46,9 +44,7 @@ public class SrType implements RuleType {
             String ans = id + "," + date + "," + caller + "," + ips[0] + "," +
                     responder + "," + ips[1] + "," + nt.format(callerItem.getRate());
             resSet.add(ans);
-        }else if(minuteTime > ruleItem.getStartMinuteTime() + timeThresh - 1){
-            ruleItem = new RuleItem(minuteTime);
-            ruleItemMap.put(ipAggregation, ruleItem);
+            warningPoint.add(new WarningItem(caller, responder, date, "SR"));
         }
         ruleItem.setMinuteTime(minuteTime);
 
