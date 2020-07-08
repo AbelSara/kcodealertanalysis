@@ -12,7 +12,6 @@ import java.util.*;
  */
 public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
     private static NumberFormat nt = NumberFormat.getPercentInstance();
-    private static String ALL = "ALL";
 
     static {
         nt.setMinimumFractionDigits(2);
@@ -22,16 +21,13 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
     //规则集合
     private List<RuleDict> ruleList;
     //解析后的数据 caller -> responder -> minute -> ipAggregation -> data
-    private Map<Integer, Map<Integer, Map<Integer, Map<Long, CallerItem>>>> map;
+    private Map<String, Map<String, Map<Integer, Map<Long, CallerItem>>>> map;
     //时间记录
     private Map<Integer, String> minute2date;
-    private Map<String, Integer> date2minute;
-    //hash->name
-    private Map<Integer, String> hash2Service;
 
     //搜索结构
-    private Map<Integer, Set<Integer>> neighbor;
-    private Map<Integer, Set<Integer>> reverseNeighbor;
+    private Map<String, Set<String>> neighbor;
+    private Map<String, Set<String>> reverseNeighbor;
     private Map<String, AggregationItem> longestPathMap;
 
     public KcodeAlertAnalysisImpl() {
@@ -39,8 +35,6 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
         sdf = new SimpleDateFormat(format);
         ruleList = new ArrayList<>();
         minute2date = new TreeMap<>();
-        date2minute = new HashMap<>();
-        hash2Service = new HashMap<>();
         map = new HashMap<>();
         neighbor = new HashMap<>();
         reverseNeighbor = new HashMap<>();
@@ -52,34 +46,31 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
             int minuteTime = timeEntry.getKey();
             String date = minute2date.get(minuteTime);
             for (RuleDict rule : ruleList) {
-                int callerHash = rule.getCaller();
-                int responderHash = rule.getResponder();
-                int ALL_HASH = -1;
-                if (callerHash == ALL_HASH) {
-                    for (Map.Entry<Integer, Map<Integer, Map<Integer, Map<Long, CallerItem>>>> callerEntry : map.entrySet()) {
-                        Map<Integer, Map<Integer, Map<Long, CallerItem>>> responderMap = callerEntry.getValue();
+                String ruleCaller = rule.getCaller();
+                String ruleResponder = rule.getResponder();
+                if (ruleCaller.equals("ALL")) {
+                    for (Map.Entry<String, Map<String, Map<Integer, Map<Long, CallerItem>>>> callerEntry : map.entrySet()) {
+                        Map<String, Map<Integer, Map<Long, CallerItem>>> responderMap = callerEntry.getValue();
                         Map<Integer, Map<Long, CallerItem>> minuteMap;
                         Map<Long, CallerItem> ipAggregationMap;
-                        String caller = hash2Service.get(callerEntry.getKey());
-                        String responder = hash2Service.get(responderHash);
-                        if ((minuteMap = responderMap.get(responderHash)) != null
+                        String caller = callerEntry.getKey();
+                        if ((minuteMap = responderMap.get(ruleResponder)) != null
                                 && (ipAggregationMap = minuteMap.get(minuteTime)) != null) {
                             for (Map.Entry<Long, CallerItem> ipAggregationEntry : ipAggregationMap.entrySet()) {
                                 String ipAggregation = decodeIp(ipAggregationEntry.getKey());
                                 CallerItem callerItem = ipAggregationEntry.getValue();
                                 callerItem.calculate();
                                 rule.compare(callerItem, ipAggregation,
-                                        minuteTime, date, resSet, caller, responder);
+                                        minuteTime, date, resSet, caller, ruleResponder);
                             }
                         }
                     }
-                } else if (responderHash == ALL_HASH) {
-                    Map<Integer, Map<Integer, Map<Long, CallerItem>>> responderMap = map.get(callerHash);
+                } else if (ruleResponder.equals("ALL")) {
+                    Map<String, Map<Integer, Map<Long, CallerItem>>> responderMap = map.get(ruleCaller);
                     if (responderMap != null) {
-                        String caller = hash2Service.get(callerHash);
-                        for (Map.Entry<Integer, Map<Integer, Map<Long, CallerItem>>> responderEntry
+                        for (Map.Entry<String, Map<Integer, Map<Long, CallerItem>>> responderEntry
                                 : responderMap.entrySet()) {
-                            String responder = hash2Service.get(responderEntry.getKey());
+                            String responder = responderEntry.getKey();
                             Map<Integer, Map<Long, CallerItem>> minuteMap = responderEntry.getValue();
                             Map<Long, CallerItem> ipAggregationMap = minuteMap.get(minuteTime);
                             if (ipAggregationMap != null) {
@@ -88,18 +79,16 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                                     CallerItem callerItem = ipAggregationEntry.getValue();
                                     callerItem.calculate();
                                     rule.compare(callerItem, ipAggregation,
-                                            minuteTime, date, resSet, caller, responder);
+                                            minuteTime, date, resSet, ruleCaller, responder);
                                 }
                             }
                         }
                     }
                 } else {
-                    Map<Integer, Map<Integer, Map<Long, CallerItem>>> responderMap = map.get(callerHash);
+                    Map<String, Map<Integer, Map<Long, CallerItem>>> responderMap = map.get(ruleCaller);
                     if (responderMap != null) {
-                        String caller = hash2Service.get(callerHash);
-                        Map<Integer, Map<Long, CallerItem>> minuteMap = responderMap.get(responderHash);
+                        Map<Integer, Map<Long, CallerItem>> minuteMap = responderMap.get(ruleResponder);
                         if (minuteMap != null) {
-                            String responder = hash2Service.get(responderHash);
                             Map<Long, CallerItem> ipAggregationMap = minuteMap.get(minuteTime);
                             if (ipAggregationMap != null) {
                                 for (Map.Entry<Long, CallerItem> ipAggregationEntry : ipAggregationMap.entrySet()) {
@@ -107,7 +96,7 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                                     CallerItem callerItem = ipAggregationEntry.getValue();
                                     callerItem.calculate();
                                     rule.compare(callerItem, ipAggregation,
-                                            minuteTime, date, resSet, caller, responder);
+                                            minuteTime, date, resSet, ruleCaller, ruleResponder);
                                 }
                             }
                         }
@@ -118,10 +107,10 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
     }
 
     private void initConstruct() {
-        for (Map.Entry<Integer, Map<Integer, Map<Integer, Map<Long, CallerItem>>>> callerEntry : map.entrySet()) {
-            String caller = hash2Service.get(callerEntry.getKey());
-            for (Map.Entry<Integer, Map<Integer, Map<Long, CallerItem>>> responderEntry : callerEntry.getValue().entrySet()) {
-                String responder = hash2Service.get(responderEntry.getKey());
+        for (Map.Entry<String, Map<String, Map<Integer, Map<Long, CallerItem>>>> callerEntry : map.entrySet()) {
+            String caller = callerEntry.getKey();
+            for (Map.Entry<String, Map<Integer, Map<Long, CallerItem>>> responderEntry : callerEntry.getValue().entrySet()) {
+                String responder = responderEntry.getKey();
                 for (Map.Entry<Integer, Map<Long, CallerItem>> minuteEntry : responderEntry.getValue().entrySet()) {
                     CallerItem tmpItem = new CallerItem();
                     for (Map.Entry<Long, CallerItem> ipAggregationEntry : minuteEntry.getValue().entrySet()) {
@@ -133,7 +122,7 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                             new AggregationItem(nt.format(tmpItem.getRate()), tmpItem.getP99()));
                 }
                 //构建图
-                Set<Integer> tmpSet = neighbor.computeIfAbsent(callerEntry.getKey(), k -> new HashSet<>());
+                Set<String> tmpSet = neighbor.computeIfAbsent(callerEntry.getKey(), k -> new HashSet<>());
                 tmpSet.add(responderEntry.getKey());
                 tmpSet = reverseNeighbor.computeIfAbsent(responderEntry.getKey(), k -> new HashSet<>());
                 tmpSet.add(callerEntry.getKey());
@@ -150,6 +139,7 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
 
     @Override
     public Collection<String> alarmMonitor(String path, Collection<String> alertRules) throws IOException, ParseException {
+        long startTime = System.currentTimeMillis();
         //解析规则
         for (String rule : alertRules) {
             String[] parts = rule.split(",");
@@ -172,25 +162,24 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
 
         int cache = 1024 * 256;
         byte[] byteArr = new byte[cache];
-        byte[] preByte = new byte[128];
-        byte[] s = new byte[cache + 128];
+        byte[] preByte = new byte[200];
+        byte[] s = new byte[cache + 200];
         int preLen = 0, len, pos;
         while ((len = inputStream.read(byteArr)) != -1) {
             System.arraycopy(preByte, 0, s, 0, preLen);
-            for (pos = len - 1; byteArr[pos] != 0x0A; --pos) ;
+            pos = len - 1;
+            while (byteArr[pos] != 0x0A)
+                --pos;
             System.arraycopy(byteArr, 0, s, preLen, ++pos);
             int end = pos + preLen;
             preLen = len - pos;
             System.arraycopy(byteArr, pos, preByte, 0, preLen);
             for (int i = 0; i < end; ) {
                 int j = i;
-                int caller = 0;
                 //caller
-                for (; s[j] != ','; ++j)
-                    caller = caller * 31 + s[j];
-                if (!hash2Service.containsKey(caller)) {
-                    hash2Service.put(caller, new String(s, i, j - i));
-                }
+                while (s[j] != ',')
+                    ++j;
+                String caller = new String(s, i, j - i);
                 //caller ip
                 long callerIp = 0;
                 for (j += 1; s[j] != ','; ++j) {
@@ -202,12 +191,9 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                         break;
                 }
                 //responder
-                int responder = 0;
-                for (j += 1, i = j; s[j] != ','; ++j)
-                    responder = responder * 31 + s[j];
-                if (!hash2Service.containsKey(responder)) {
-                    hash2Service.put(responder, new String(s, i, j - i));
-                }
+                for (j += 1, i = j; s[j] != ',';)
+                    ++j;
+                String responder = new String(s, i , j - i);
                 //responder ip
                 long responderIp = 0;
                 for (j += 1; s[j] != ','; ++j) {
@@ -228,7 +214,7 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                     cost = cost * 10 + s[j] - '0';
                 //timestamp
                 long timestamp = 0;
-                for (j += 1; s[j] != 0x0A; ++j)
+                for (j += 1; s[j] != '\r' && s[j] != '\n'; ++j)
                     timestamp = timestamp * 10 + s[j] - '0';
                 int minuteStamp = (int) (timestamp / 60000);
                 i = j + 1;
@@ -236,7 +222,7 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                 ipAggregation = (ipAggregation << 32) | callerIp;
                 ipAggregation = (ipAggregation << 32) | responderIp;
                 //放入中间数据
-                Map<Integer, Map<Integer, Map<Long, CallerItem>>> responderMap =
+                Map<String, Map<Integer, Map<Long, CallerItem>>> responderMap =
                         map.computeIfAbsent(caller, k -> new HashMap<>());
                 Map<Integer, Map<Long, CallerItem>> minuteMap =
                         responderMap.computeIfAbsent(responder, k -> new HashMap<>());
@@ -248,28 +234,29 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                 if (!minute2date.containsKey(minuteStamp)) {
                     String date = sdf.format(new Date(timestamp));
                     minute2date.put(minuteStamp, date);
-                    date2minute.put(date, minuteStamp);
                 }
             }
         }
         calculateCollection(resSet);
         initConstruct();
+        long endTime = System.currentTimeMillis();
+        System.out.println(endTime - startTime);
         return resSet;
     }
 
-    private int findLongest(Map<Integer, Set<Integer>> neighborMap, int curIdx, int step) {
+    private int findLongest(Map<String, Set<String>> neighborMap, String curIdx, int step) {
         step += 1;
-        Set<Integer> neighbors = neighborMap.get(curIdx);
+        Set<String> neighbors = neighborMap.get(curIdx);
         if (neighbors == null) return step;
         int res = 0;
-        for (int neighborIdx : neighbors) {
+        for (String neighborIdx : neighbors) {
             res = Math.max(res, findLongest(neighborMap, neighborIdx, step));
         }
         return res;
     }
 
-    private void collectLongest(Map<Integer, Set<Integer>> neighborMap, int curIdx, LinkedList<Integer> list,
-                                List<List<Integer>> resList, int step, int target, boolean forward) {
+    private void collectLongest(Map<String, Set<String>> neighborMap, String curIdx, LinkedList<String> list,
+                                List<List<String>> resList, int step, int target, boolean forward) {
         step += 1;
         if (forward) {
             list.addLast(curIdx);
@@ -279,9 +266,9 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
         if (step == target) {
             resList.add(new ArrayList<>(list));
         }
-        Set<Integer> neighbors = neighborMap.get(curIdx);
+        Set<String> neighbors = neighborMap.get(curIdx);
         if (neighbors != null) {
-            for (int neighborIdx : neighbors) {
+            for (String neighborIdx : neighbors) {
                 collectLongest(neighborMap, neighborIdx, list, resList, step, target, forward);
             }
         }
@@ -297,22 +284,22 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
         boolean sr = false;
         if (type.equals("SR"))
             sr = true;
-        int longest = findLongest(neighbor, responder.hashCode(), 0);
-        List<List<Integer>> forwardList = new ArrayList<>();
-        collectLongest(neighbor, responder.hashCode(), new LinkedList<>(), forwardList, 0, longest, true);
-        longest = findLongest(reverseNeighbor, caller.hashCode(), 0);
-        List<List<Integer>> reverseList = new ArrayList<>();
-        collectLongest(reverseNeighbor, caller.hashCode(), new LinkedList<>(), reverseList, 0, longest, false);
+        int longest = findLongest(neighbor, responder, 0);
+        List<List<String>> forwardList = new ArrayList<>();
+        collectLongest(neighbor, responder, new LinkedList<>(), forwardList, 0, longest, true);
+        longest = findLongest(reverseNeighbor, caller, 0);
+        List<List<String>> reverseList = new ArrayList<>();
+        collectLongest(reverseNeighbor, caller, new LinkedList<>(), reverseList, 0, longest, false);
         Set<String> resSet = new HashSet<>();
-        for (List<Integer> reversePath : reverseList) {
+        for (List<String> reversePath : reverseList) {
             StringBuilder reversePathBuilder = new StringBuilder();
             StringBuilder reverseResultBuilder = new StringBuilder();
-            int preIdx = -1;
-            for (int idx : reversePath) {
-                reversePathBuilder.append(hash2Service.get(idx)).append("->");
-                if (preIdx != -1) {
+            String preIdx = " ";
+            for (String idx : reversePath) {
+                reversePathBuilder.append(idx).append("->");
+                if (!preIdx.equals(" ")) {
                     AggregationItem aggregationItem =
-                            longestPathMap.get(hash2Service.get(preIdx) + hash2Service.get(idx) + time);
+                            longestPathMap.get(preIdx + idx + time);
                     if (aggregationItem != null) {
                         reverseResultBuilder.append(sr ?
                                 aggregationItem.getRate() : (aggregationItem.getP99() + "ms")).append(',');
@@ -322,16 +309,16 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                 }
                 preIdx = idx;
             }
-            int tmp = preIdx;
-            StringBuilder pathBuilder = new StringBuilder(reversePathBuilder);
-            StringBuilder resultBuilder = new StringBuilder(reverseResultBuilder);
-            for (List<Integer> path : forwardList) {
+            String tmp = preIdx;
+            for (List<String> path : forwardList) {
                 preIdx = tmp;
-                for (int idx : path) {
-                    pathBuilder.append(hash2Service.get(idx)).append("->");
-                    if (preIdx != -1) {
+                StringBuilder pathBuilder = new StringBuilder(reversePathBuilder);
+                StringBuilder resultBuilder = new StringBuilder(reverseResultBuilder);
+                for (String idx : path) {
+                    pathBuilder.append(idx).append("->");
+                    if (!preIdx.equals(" ")) {
                         AggregationItem aggregationItem =
-                                longestPathMap.get(hash2Service.get(preIdx) + hash2Service.get(idx) + time);
+                                longestPathMap.get(preIdx + idx + time);
                         if (aggregationItem != null) {
                             resultBuilder.append(sr ?
                                     aggregationItem.getRate() : (aggregationItem.getP99() + "ms")).append(',');
@@ -341,11 +328,11 @@ public class KcodeAlertAnalysisImpl implements KcodeAlertAnalysis {
                     }
                     preIdx = idx;
                 }
+                pathBuilder.delete(pathBuilder.length() - 2, pathBuilder.length());
+                resultBuilder.deleteCharAt(resultBuilder.length() - 1);
+                pathBuilder.append('|').append(resultBuilder);
+                resSet.add(pathBuilder.toString());
             }
-            pathBuilder.delete(pathBuilder.length() - 2, pathBuilder.length());
-            resultBuilder.deleteCharAt(resultBuilder.length() - 1);
-            pathBuilder.append('|').append(resultBuilder);
-            resSet.add(pathBuilder.toString());
         }
         return resSet;
     }

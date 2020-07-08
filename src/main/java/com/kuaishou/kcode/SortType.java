@@ -30,23 +30,20 @@ public class SortType implements RuleType {
         }
 
         RuleItem ruleItem = ruleItemMap.computeIfAbsent(ipAggregation,
-                k -> new SrItem(minuteTime, date, callerItem.getP99()));
+                k -> new RuleItem(minuteTime));
         if (ruleItem.getMinuteTime() != minuteTime && ruleItem.getMinuteTime() + 1 != minuteTime) {
-            ruleItem = new SrItem(minuteTime, date, callerItem.getP99());
+            ruleItem = new RuleItem(minuteTime);
             ruleItemMap.put(ipAggregation, ruleItem);
         }
         if (minuteTime >= ruleItem.getStartMinuteTime() + timeThresh - 1) {
-            ruleItem.setSuccess(true);
             String[] ips = ipAggregation.split(",");
             String ans = id + "," + date + "," + caller + "," + ips[0] + "," +
                     responder + "," + ips[1] + "," + callerItem.getP99() + "ms";
             resSet.add(ans);
-        } else {
-            ruleItem = new SrItem(minuteTime, date, callerItem.getP99());
+        } else if(minuteTime > ruleItem.getStartMinuteTime() + timeThresh - 1){
+            ruleItem = new RuleItem(minuteTime);
             ruleItemMap.put(ipAggregation, ruleItem);
         }
-        ruleItem.setDoubleWarning(callerItem.getP99());
-        ruleItem.setDate(date);
         ruleItem.setMinuteTime(minuteTime);
 
         return true;

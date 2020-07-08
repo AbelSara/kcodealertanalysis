@@ -1,25 +1,24 @@
 package com.kuaishou.kcode;
 
-public interface RuleItem {
-    int getMinuteTime();
+public class RuleItem {
+    private int minuteTime;
+    private int startMinuteTime;
 
-    void setMinuteTime(int minuteTime);
+    public RuleItem(int minuteTime) {
+        this.minuteTime = minuteTime;
+        startMinuteTime = minuteTime;
+    }
 
-    String getDate();
+    int getMinuteTime(){
+        return minuteTime;
+    }
 
-    void setDate(String date);
+    void setMinuteTime(int minuteTime){
+        this.minuteTime = minuteTime;
+    }
 
-    double getDoubleWarning();
+    int getStartMinuteTime(){
+        return startMinuteTime;
+    }
 
-    int getIntWarning();
-
-    void setDoubleWarning(double warning);
-
-    void setIntWarning(int warning);
-
-    int getStartMinuteTime();
-
-    boolean getSuccess();
-
-    void setSuccess(boolean success);
 }

@@ -34,25 +34,22 @@ public class SrType implements RuleType {
             return false;
         }
         RuleItem ruleItem = ruleItemMap.computeIfAbsent(ipAggregation,
-                k -> new SrItem(minuteTime, date, callerItem.getRate()));
+                k -> new RuleItem(minuteTime));
         //判断时间是否连续
         if(ruleItem.getMinuteTime() != minuteTime && ruleItem.getMinuteTime() + 1 != minuteTime){
-            ruleItem = new SrItem(minuteTime, date, callerItem.getRate());
+            ruleItem = new RuleItem(minuteTime);
             ruleItemMap.put(ipAggregation, ruleItem);
         }
         //判断时间是否再阈值内
         if(minuteTime >= ruleItem.getStartMinuteTime() + timeThresh - 1) {
-            ruleItem.setSuccess(true);
             String[] ips = ipAggregation.split(",");
             String ans = id + "," + date + "," + caller + "," + ips[0] + "," +
                     responder + "," + ips[1] + "," + nt.format(callerItem.getRate());
             resSet.add(ans);
-        }else{
-            ruleItem = new SrItem(minuteTime, date, callerItem.getRate());
+        }else if(minuteTime > ruleItem.getStartMinuteTime() + timeThresh - 1){
+            ruleItem = new RuleItem(minuteTime);
             ruleItemMap.put(ipAggregation, ruleItem);
         }
-        ruleItem.setDoubleWarning(callerItem.getRate());
-        ruleItem.setDate(date);
         ruleItem.setMinuteTime(minuteTime);
 
         return true;

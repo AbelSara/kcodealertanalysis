@@ -5,17 +5,15 @@ import java.text.ParseException;
 import java.util.Set;
 
 class RuleDict {
-    private int caller;
-    private int responder;
+    private String caller;
+    private String responder;
     //详细的规则
     private RuleType ruleType;
 
-    private static String ALL = "ALL";
-
     RuleDict(String caller, String responder,
              int id, char compare, String type, int timeThresh, String thresh) throws ParseException {
-        this.caller = caller.equals(ALL) ? -1 : caller.hashCode();
-        this.responder = responder.equals(ALL) ? -1 : responder.hashCode();
+        this.caller = caller;
+        this.responder = responder;
         if(type.equals("SR")){
             this.ruleType = new SrType(
                     NumberFormat.getInstance().parse(thresh).doubleValue() / 100, compare, timeThresh, id);
@@ -33,11 +31,11 @@ class RuleDict {
         ruleType.compare(callerItem, ipAggregation, minuteTime, date, resSet, caller, responder);
     }
 
-    public int getCaller() {
+    String getCaller() {
         return caller;
     }
 
-    public int getResponder() {
+    String getResponder() {
         return responder;
     }
 }
